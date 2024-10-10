@@ -10,7 +10,6 @@ import 'package:ente_auth/onboarding/view/common/add_chip.dart';
 import 'package:ente_auth/onboarding/view/common/add_tag.dart';
 import 'package:ente_auth/onboarding/view/common/field_label.dart';
 import 'package:ente_auth/onboarding/view/common/tag_chip.dart';
-import 'package:ente_auth/onboarding/view/view_qr_page.dart';
 import 'package:ente_auth/store/code_display_store.dart';
 import 'package:ente_auth/theme/ente_theme.dart';
 import 'package:ente_auth/ui/components/buttons/button_widget.dart';
@@ -19,6 +18,7 @@ import 'package:ente_auth/utils/dialog_util.dart';
 import 'package:ente_auth/utils/toast_util.dart';
 import 'package:ente_auth/utils/totp_util.dart';
 import "package:flutter/material.dart";
+import 'package:logging/logging.dart';
 
 class SetupEnterSecretKeyPage extends StatefulWidget {
   final Code? code;
@@ -31,6 +31,7 @@ class SetupEnterSecretKeyPage extends StatefulWidget {
 }
 
 class _SetupEnterSecretKeyPageState extends State<SetupEnterSecretKeyPage> {
+  final Logger _logger = Logger('_SetupEnterSecretKeyPageState');
   final int _notesLimit = 500;
   final int _otherTextLimit = 200;
   late TextEditingController _issuerController;
@@ -114,25 +115,7 @@ class _SetupEnterSecretKeyPageState extends State<SetupEnterSecretKeyPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.importAccountPageTitle),
-        actions: [
-          if (widget.code != null)
-            IconButton(
-              icon: const Icon(Icons.qr_code_2_outlined),
-              enableFeedback: true,
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (BuildContext context) {
-                      return ViewQrPage(code: widget.code);
-                    },
-                  ),
-                ).ignore();
-              },
-            ),
-        ],
-      ),
+      appBar: AppBar(title: Text(l10n.importAccountPageTitle)),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 20),
@@ -374,7 +357,8 @@ class _SetupEnterSecretKeyPageState extends State<SetupEnterSecretKeyPage> {
       // Verify the validity of the code
       getOTP(newCode);
       Navigator.of(context).pop(newCode);
-    } catch (e) {
+    } catch (e, s) {
+      _logger.severe("Error saving code", e, s);
       _showIncorrectDetailsDialog(context);
     }
   }

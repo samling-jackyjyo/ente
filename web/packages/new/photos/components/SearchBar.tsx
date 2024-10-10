@@ -1,15 +1,19 @@
 import { assertionFailed } from "@/base/assert";
 import { useIsMobileWidth } from "@/base/hooks";
-import { ItemCard, ResultPreviewTile } from "@/new/photos/components/ItemCards";
+import { ItemCard, PreviewItemTile } from "@/new/photos/components/Tiles";
 import {
     isMLSupported,
     mlStatusSnapshot,
     mlStatusSubscribe,
+    peopleSnapshot,
+    peopleSubscribe,
 } from "@/new/photos/services/ml";
+import type { Person } from "@/new/photos/services/ml/people";
 import { searchOptionsForString } from "@/new/photos/services/search";
 import type { SearchOption } from "@/new/photos/services/search/types";
 import { nullToUndefined } from "@/utils/transform";
 import CalendarIcon from "@mui/icons-material/CalendarMonth";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import CloseIcon from "@mui/icons-material/Close";
 import ImageIcon from "@mui/icons-material/Image";
 import LocationIcon from "@mui/icons-material/LocationOn";
@@ -37,6 +41,9 @@ import {
     type StylesConfig,
 } from "react-select";
 import AsyncSelect from "react-select/async";
+import { SearchPeopleList } from "./PeopleList";
+import { UnstyledButton } from "./UnstyledButton";
+import type { ButtonishProps } from "./mui";
 
 export interface SearchBarProps {
     /**
@@ -56,13 +63,25 @@ export interface SearchBarProps {
      */
     isInSearchMode: boolean;
     /**
-     * Enter or exit "search mode".
+     * Invoked when the user wants to enter "search mode".
+     *
+     * This scenario only arises when the search bar is in the mobile device
+     * sized configuration, where the user needs to tap the search icon to enter
+     * the search mode.
      */
-    setIsInSearchMode: (b: boolean) => void;
+    onShowSearchInput: () => void;
     /**
      * Set or clear the selected {@link SearchOption}.
      */
     onSelectSearchOption: (o: SearchOption | undefined) => void;
+    /**
+     * Called when the user selects a person shown in the empty state view, or
+     * clicks the people list header itself.
+     *
+     * @param person The selected person, or `undefined` if the user clicked the
+     * generic people header.
+     */
+    onSelectPerson: (person: Person | undefined) => void;
 }
 
 /**
@@ -81,20 +100,18 @@ export interface SearchBarProps {
  * list of files that match that suggestion.
  */
 export const SearchBar: React.FC<SearchBarProps> = ({
-    setIsInSearchMode,
     isInSearchMode,
-    onSelectSearchOption,
+    onShowSearchInput,
+    ...rest
 }) => {
     const isMobileWidth = useIsMobileWidth();
-
-    const showSearchInput = () => setIsInSearchMode(true);
 
     return (
         <Box sx={{ flex: 1, px: ["4px", "24px"] }}>
             {isMobileWidth && !isInSearchMode ? (
-                <MobileSearchArea onSearch={showSearchInput} />
+                <MobileSearchArea onSearch={onShowSearchInput} />
             ) : (
-                <SearchInput {...{ isInSearchMode, onSelectSearchOption }} />
+                <SearchInput {...{ isInSearchMode }} {...rest} />
             )}
         </Box>
     );
@@ -113,9 +130,10 @@ const MobileSearchArea: React.FC<MobileSearchAreaProps> = ({ onSearch }) => (
     </Box>
 );
 
-const SearchInput: React.FC<Omit<SearchBarProps, "setIsInSearchMode">> = ({
+const SearchInput: React.FC<Omit<SearchBarProps, "onShowSearchInput">> = ({
     isInSearchMode,
     onSelectSearchOption,
+    onSelectPerson,
 }) => {
     // A ref to the top level Select.
     const selectRef = useRef<SelectInstance<SearchOption> | null>(null);
@@ -134,9 +152,10 @@ const SearchInput: React.FC<Omit<SearchBarProps, "setIsInSearchMode">> = ({
     const components = useMemo(() => ({ Control, Input, Option }), []);
 
     const handleChange = (value: SearchOption | null) => {
-        // Collection suggestions are handled differently - our caller will
-        // switch to the collection view, dismissing search.
-        if (value?.suggestion.type == "collection") {
+        const type = value?.suggestion.type;
+        // Collection and people suggestions are handled differently - our
+        // caller will switch to the corresponding view, dismissing search.
+        if (type == "collection" || type == "person") {
             setValue(null);
             setInputValue("");
         } else {
@@ -161,16 +180,20 @@ const SearchInput: React.FC<Omit<SearchBarProps, "setIsInSearchMode">> = ({
     };
 
     const resetSearch = () => {
+        // Dismiss the search menu if it is open.
+        selectRef.current?.blur();
+
+        // Clear all our state.
         setValue(null);
         setInputValue("");
+
+        // Let our parent know.
         onSelectSearchOption(undefined);
     };
 
-    const handleSelectCGroup = (value: SearchOption) => {
-        // Dismiss the search menu.
-        selectRef.current?.blur();
-        setValue(value);
-        onSelectSearchOption(undefined);
+    const handleSelectPerson = (person: Person | undefined) => {
+        resetSearch();
+        onSelectPerson(person);
     };
 
     const handleFocus = () => {
@@ -202,7 +225,7 @@ const SearchInput: React.FC<Omit<SearchBarProps, "setIsInSearchMode">> = ({
                 placeholder={t("search_hint")}
                 noOptionsMessage={({ inputValue }) =>
                     shouldShowEmptyState(inputValue) ? (
-                        <EmptyState onSelectCGroup={handleSelectCGroup} />
+                        <EmptyState onSelectPerson={handleSelectPerson} />
                     ) : null
                 }
             />
@@ -243,7 +266,11 @@ const createSelectStyles = ({
             cursor: "text",
         },
     }),
-    input: (styles) => ({ ...styles, color: colors.text.base }),
+    input: (styles) => ({
+        ...styles,
+        color: colors.text.base,
+        overflowX: "hidden",
+    }),
     menu: (style) => ({
         ...style,
         // Suppress the default margin at the top.
@@ -268,6 +295,7 @@ const createSelectStyles = ({
         ...style,
         color: colors.text.muted,
         whiteSpace: "nowrap",
+        overflowX: "hidden",
     }),
     // Hide some things we don't need.
     dropdownIndicator: (style) => ({ ...style, display: "none" }),
@@ -347,19 +375,18 @@ const shouldShowEmptyState = (inputValue: string) => {
     return true;
 };
 
-interface EmptyStateProps {
-    /** Called when the user selects a cgroup shown in the empty state view. */
-    onSelectCGroup: (value: SearchOption) => void;
-}
-
 /**
  * The view shown in the menu area when the user has not typed anything in the
  * search box.
  */
-const EmptyState: React.FC<EmptyStateProps> = () => {
+const EmptyState: React.FC<Pick<SearchBarProps, "onSelectPerson">> = ({
+    onSelectPerson,
+}) => {
     const mlStatus = useSyncExternalStore(mlStatusSubscribe, mlStatusSnapshot);
+    const people = useSyncExternalStore(peopleSubscribe, peopleSnapshot);
 
     if (!mlStatus || mlStatus.phase == "disabled") {
+        // The preflight check should've prevented us from coming here.
         assertionFailed();
         return <></>;
     }
@@ -376,6 +403,7 @@ const EmptyState: React.FC<EmptyStateProps> = () => {
             label = t("indexing_fetching", mlStatus);
             break;
         case "clustering":
+            // TODO-Cluster
             label = t("indexing_people", mlStatus);
             break;
         case "done":
@@ -383,108 +411,44 @@ const EmptyState: React.FC<EmptyStateProps> = () => {
             break;
     }
 
-    // TODO-Cluster this is where it'll go.
-    // const people = wipPersons();
-
     return (
-        <Box>
-            <Typography variant="mini" sx={{ textAlign: "left" }}>
+        <Box sx={{ textAlign: "left" }}>
+            {people && people.length > 0 && (
+                <>
+                    <SearchPeopleHeader
+                        onClick={() => onSelectPerson(undefined)}
+                    />
+                    <SearchPeopleList {...{ people, onSelectPerson }} />
+                </>
+            )}
+            <Typography variant="mini" sx={{ mt: "5px", mb: "4px" }}>
                 {label}
             </Typography>
         </Box>
     );
-
-    // TODO-Cluster
-    // const options = props.selectProps.options as SearchOption[];
-    // const peopleSuggestions = options.filter(
-    //     (o) => o.type === SuggestionType.PERSON,
-    // );
-    // const people = peopleSuggestions.map((o) => o.value as Person);
-    // return (
-    //     <SelectComponents.Menu {...props}>
-    //         <Box my={1}>
-    //             {isMLEnabled() &&
-    //                 indexStatus &&
-    //                 (people && people.length > 0 ? (
-    //                     <Box>
-    //                         <Legend>{t("people")}</Legend>
-    //                     </Box>
-    //                 ) : (
-    //                     <Box height={6} />
-    //                 ))}
-    //             {isMLEnabled() && indexStatus && (
-    //                 <Box>
-    //                     <Caption>{indexStatusSuggestion.label}</Caption>
-    //                 </Box>
-    //             )}
-    //             {people && people.length > 0 && (
-    //                 <Row> // "@ente/shared/components/Container"
-    //                     <PeopleList // @/new/photos/components/PeopleList
-    //                         people={people}
-    //                         maxRows={2}
-    //                         onSelect={(_, index) => {
-    //                         }}
-    //                     />
-    //                 </Row>
-    //             )}
-    //         </Box>
-    //         {props.children}
-    //     </SelectComponents.Menu>
-    // );
 };
 
-// TODO-Cluster
-// const Legend = styled("span")`
-//     font-size: 20px;
-//     color: #ddd;
-//     display: inline;
-//     padding: 0px 12px;
-// `;
+const SearchPeopleHeader: React.FC<ButtonishProps> = ({ onClick }) => (
+    <SearchPeopleHeaderButton {...{ onClick }}>
+        <Stack direction="row" color="text.muted">
+            <Typography color="text.base" variant="large">
+                {t("people")}
+            </Typography>
+            <ChevronRightIcon />
+        </Stack>
+    </SearchPeopleHeaderButton>
+);
 
-/*
-TODO: Cluster
-
-export async function getAllPeopleSuggestion(): Promise<Array<Suggestion>> {
-    try {
-        const people = await getAllPeople(200);
-        return people.map((person) => ({
-            label: person.name,
-            type: SuggestionType.PERSON,
-            value: person,
-            hide: true,
-        }));
-    } catch (e) {
-        log.error("getAllPeopleSuggestion failed", e);
-        return [];
+const SearchPeopleHeaderButton = styled(UnstyledButton)(
+    ({ theme }) => `
+    /* The color for the chevron */
+    color: ${theme.colors.stroke.muted};
+    /* Hover indication */
+    && :hover {
+        color: ${theme.colors.stroke.base};
     }
-}
-
-async function getAllPeople(limit: number = undefined) {
-    return (await wipPersons()).slice(0, limit);
-    // TODO-Clustetr
-    // if (done) return [];
-
-    // done = true;
-    // if (process.env.NEXT_PUBLIC_ENTE_WIP_CL_FETCH) {
-    //     await syncCGroups();
-    //     const people = await clusterGroups();
-    //     log.debug(() => ["people", { people }]);
-    // }
-
-    // let people: Array<Person> = []; // await mlIDbStorage.getAllPeople();
-    // people = await wipCluster();
-    // // await mlPeopleStore.iterate<Person, void>((person) => {
-    // //     people.push(person);
-    // // });
-    // people = people ?? [];
-    // const result = people
-    //     .sort((p1, p2) => p2.files.length - p1.files.length)
-    //     .slice(0, limit);
-    // // log.debug(() => ["getAllPeople", result]);
-
-    // return result;
-}
-*/
+`,
+);
 
 const Option: React.FC<OptionProps<SearchOption, false>> = (props) => (
     <SelectComponents.Option {...props}>
@@ -494,8 +458,10 @@ const Option: React.FC<OptionProps<SearchOption, false>> = (props) => (
 );
 
 const OptionContents = ({ data: option }: { data: SearchOption }) => (
-    <Stack className="option-contents" gap={1} px={2} py={1}>
-        <Typography variant="mini">{labelForOption(option)}</Typography>
+    <Stack className="option-contents" gap="4px" px={2} py={1}>
+        <Typography variant="mini" color="text.muted">
+            {labelForOption(option)}
+        </Typography>
         <Stack
             direction="row"
             gap={1}
@@ -517,7 +483,7 @@ const OptionContents = ({ data: option }: { data: SearchOption }) => (
                     <ItemCard
                         key={file.id}
                         coverFile={file}
-                        TileComponent={ResultPreviewTile}
+                        TileComponent={PreviewItemTile}
                     />
                 ))}
             </Stack>
@@ -541,6 +507,7 @@ const labelForOption = (option: SearchOption) => {
 
         case "date":
             return t("date");
+
         case "location":
             return t("location");
 
@@ -551,6 +518,6 @@ const labelForOption = (option: SearchOption) => {
             return t("magic");
 
         case "person":
-            return t("person");
+            return t("people");
     }
 };
