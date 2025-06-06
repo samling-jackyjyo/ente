@@ -171,7 +171,7 @@ export const VerifyMasterPasswordForm: React.FC<
 
         let key: string;
         try {
-            key = await cryptoWorker.decryptBoxB64(
+            key = await cryptoWorker.decryptBox(
                 {
                     encryptedData: keyAttributes.encryptedKey,
                     nonce: keyAttributes.keyDecryptionNonce,
@@ -204,6 +204,7 @@ export const VerifyMasterPasswordForm: React.FC<
                 autoComplete="current-password"
                 label={t("password")}
                 fullWidth
+                autoFocus
                 margin="normal"
                 disabled={formik.isSubmitting}
                 error={!!formik.errors.password}

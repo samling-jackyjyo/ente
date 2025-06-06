@@ -18,6 +18,58 @@ export interface User {
     twoFactorSessionID: string;
 }
 
+// TODO: During login the only field present is email. Which makes this
+// optionality indicated by these types incorrect.
+const LocalUser = z.object({
+    /** The user's ID. */
+    id: z.number(),
+    /** The user's email. */
+    email: z.string(),
+    /**
+     * The user's (plaintext) auth token.
+     *
+     * It is used for making API calls on their behalf, by passing this token as
+     * the value of the X-Auth-Token header in the HTTP request.
+     */
+    token: z.string(),
+});
+
+/** Locally available data for the logged in user */
+export type LocalUser = z.infer<typeof LocalUser>;
+
+/**
+ * Return the logged-in user, if someone is indeed logged in. Otherwise return
+ * `undefined`.
+ *
+ * The user's data is stored in the browser's localStorage. Thus, this function
+ * only works from the main thread, not from web workers (local storage is not
+ * accessible to web workers).
+ */
+export const localUser = (): LocalUser | undefined => {
+    // TODO: duplicate of getData("user")
+    const s = localStorage.getItem("user");
+    if (!s) return undefined;
+    return LocalUser.parse(JSON.parse(s));
+};
+
+/**
+ * A wrapper over {@link localUser} with that throws if no one is logged in.
+ */
+export const ensureLocalUser = (): LocalUser =>
+    ensureExpectedLoggedInValue(localUser());
+
+/**
+ * A function throws an error if a value that is expected to be truthy when the
+ * user is logged in is instead falsey.
+ *
+ * This is meant as a convenience wrapper to assert that a value we expect when
+ * the user is logged in is indeed there.
+ */
+export const ensureExpectedLoggedInValue = <T>(t: T | undefined): T => {
+    if (!t) throw new Error("Not logged in");
+    return t;
+};
+
 /**
  * The user's various encrypted keys and their related attributes.
  *
@@ -34,7 +86,7 @@ export interface KeyAttributes {
     /**
      * The user's master key encrypted with the key encryption key.
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      *
      * [Note: Key encryption key]
      *
@@ -56,7 +108,7 @@ export interface KeyAttributes {
     /**
      * The nonce used during the encryption of the master key.
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      *
      * @see {@link encryptedKey}.
      */
@@ -64,7 +116,7 @@ export interface KeyAttributes {
     /**
      * The salt used during the derivation of the kek.
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      *
      * See: [Note: Key encryption key].
      */
@@ -90,21 +142,29 @@ export interface KeyAttributes {
      * The user's public key (part of their public-key keypair, the other half
      * being the {@link encryptedSecretKey}).
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      */
     publicKey: string;
     /**
      * The user's private key (part of their public-key keypair, the other half
      * being the {@link publicKey}) encrypted with their master key.
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      *
-     * [Note: Public and secret key nomenclature]
+     * [Note: privateKey and secretKey]
      *
      * The nomenclature for the key pair follows libsodium's conventions
      * (https://doc.libsodium.org/public-key_cryptography/authenticated_encryption#key-pair-generation),
      * who possibly chose public + secret instead of public + private to avoid
      * confusion with shorthand notation (pk).
+     *
+     * However, the library author later changed their mind on this, so while
+     * libsodium itself (the C library) and the documentation uses "secretKey",
+     * the JavaScript implementation (libsodium.js) uses "privateKey".
+     *
+     * This structure uses the term "secretKey" since that is what the remote
+     * protocol already was based on. Within the web app codebase, we use
+     * "privateKey" since that is what the underlying libsodium.js uses.
      */
     encryptedSecretKey: string;
     /**
@@ -114,7 +174,7 @@ export interface KeyAttributes {
     /**
      * The user's master key after being encrypted with their recovery key.
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      *
      * This allows the user to recover their master key if they forget their
      * passphrase but still have their recovery key.
@@ -126,13 +186,13 @@ export interface KeyAttributes {
      * The nonce used during the encryption of
      * {@link masterKeyEncryptedWithRecoveryKey}.
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      */
     masterKeyDecryptionNonce?: string;
     /**
      * The user's recovery key after being encrypted with their master key.
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      *
      * Note: This value doesn't change after being initially created.
      */
@@ -141,7 +201,7 @@ export interface KeyAttributes {
      * The nonce used during the encryption of
      * {@link recoveryKeyEncryptedWithMasterKey}.
      *
-     * Base 64 encoded.
+     * Base64 encoded.
      */
     recoveryKeyDecryptionNonce?: string;
 }
@@ -169,6 +229,26 @@ export const RemoteKeyAttributes = z.object({
         .transform(nullToUndefined),
     recoveryKeyDecryptionNonce: z.string().nullish().transform(nullToUndefined),
 });
+
+/**
+ * Return {@link KeyAttributes} if they are present in local storage.
+ *
+ * The key attributes are stored in the browser's localStorage. Thus, this
+ * function only works from the main thread, not from web workers (local storage
+ * is not accessible to web workers).
+ */
+export const savedKeyAttributes = (): KeyAttributes | undefined => {
+    const jsonString = localStorage.getItem("keyAttributes");
+    if (!jsonString) return undefined;
+    return RemoteKeyAttributes.parse(JSON.parse(jsonString));
+};
+
+/**
+ * A variant of {@link savedKeyAttributes} that throws if keyAttributes are not
+ * present in local storage.
+ */
+export const ensureSavedKeyAttributes = (): KeyAttributes =>
+    ensureExpectedLoggedInValue(savedKeyAttributes());
 
 export interface UserVerificationResponse {
     id: number;
