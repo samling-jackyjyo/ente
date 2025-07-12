@@ -162,6 +162,7 @@
     "ok": "OK",
     "success": "Sukces",
     "error": "Błąd",
+    "note": "",
     "offline_message": "Jesteś offline, wyświetlane są wspomnienia z pamięci podręcznej",
     "install": "Zainstaluj",
     "install_mobile_app": "Zainstaluj naszą aplikację na system <a>Android</a> lub <b>iOS</b>, aby automatycznie wykonać kopię zapasową wszystkich zdjęć",
@@ -531,9 +532,9 @@
     "ml_consent_description": "<p>Jeśli włączysz nauczanie maszynowe, Ente wyodrębni informacje takie jak geometria twarzy z plików, w tym udostępnionych z Tobą.</p><p>Będzie to miało miejsce na Twoim urządzeniu, a wygenerowane informacje biometryczne będą zaszyfrowane end-to-end.</p><p><a>Kliknij tutaj, aby uzyskać więcej informacji na temat tej funkcji w naszej polityce prywatności</a></p>",
     "ml_consent_confirmation": "Rozumiem i chcę włączyć nauczanie maszynowe",
     "labs": "Laboratoria",
-    "passphrase_strength_weak": "Siła hasła: Słabe",
-    "passphrase_strength_moderate": "Siła hasła: Umiarkowane",
-    "passphrase_strength_strong": "Siła hasła: Silne",
+    "password_strength_weak": "Siła hasła: Słabe",
+    "password_strength_moderate": "Siła hasła: Umiarkowane",
+    "password_strength_strong": "Siła hasła: Silne",
     "preferences": "Preferencje",
     "language": "Język",
     "advanced": "Zaawansowane",
@@ -683,5 +684,6 @@
     "share_favorites": "",
     "person_favorites": "",
     "shared_favorites": "",
-    "added_by_name": ""
+    "added_by_name": "",
+    "unowned_files_not_processed": ""
 }

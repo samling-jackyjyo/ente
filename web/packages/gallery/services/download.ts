@@ -1,8 +1,8 @@
 import { blobCache, type BlobCache } from "ente-base/blob-cache";
 import {
+    decryptBlobBytes,
     decryptStreamBytes,
     decryptStreamChunk,
-    decryptThumbnail,
     initChunkDecryption,
 } from "ente-base/crypto";
 import {
@@ -12,10 +12,11 @@ import {
     retryEnsuringHTTPOk,
     type PublicAlbumsCredentials,
 } from "ente-base/http";
-import { ensureAuthToken } from "ente-base/local-user";
 import log from "ente-base/log";
 import { apiURL, customAPIOrigin } from "ente-base/origins";
+import { ensureAuthToken } from "ente-base/token";
 import type { EnteFile } from "ente-media/file";
+import { fileFileName } from "ente-media/file-metadata";
 import { FileType } from "ente-media/file-type";
 import { decodeLivePhoto } from "ente-media/live-photo";
 import { playableVideoURL, renderableImageBlob } from "./convert";
@@ -197,7 +198,9 @@ class DownloadManager {
      * Set the credentials that should be used for download files when we're
      * running in the context of the public albums app.
      */
-    setPublicAlbumsCredentials(credentials: PublicAlbumsCredentials) {
+    setPublicAlbumsCredentials(
+        credentials: PublicAlbumsCredentials | undefined,
+    ) {
         this.publicAlbumsCredentials = credentials;
     }
 
@@ -295,7 +298,7 @@ class DownloadManager {
             this._downloadThumbnail(file),
         );
         const decryptionHeader = file.thumbnail.decryptionHeader;
-        return decryptThumbnail({ encryptedData, decryptionHeader }, file.key);
+        return decryptBlobBytes({ encryptedData, decryptionHeader }, file.key);
     };
 
     private async _downloadThumbnail(file: EnteFile) {
@@ -407,8 +410,8 @@ class DownloadManager {
         const res = await wrapErrors(() => this._downloadFile(file, opts));
 
         if (
-            file.metadata.fileType === FileType.image ||
-            file.metadata.fileType === FileType.livePhoto
+            file.metadata.fileType == FileType.image ||
+            file.metadata.fileType == FileType.livePhoto
         ) {
             const encryptedData = new Uint8Array(
                 await wrapErrors(() => res.arrayBuffer()),
@@ -612,7 +615,7 @@ const createRenderableSourceURLs = async (
 ): Promise<RenderableSourceURLs> => {
     const originalFileURL = await originalFileURLPromise;
     const fileBlob = await fetch(originalFileURL).then((res) => res.blob());
-    const fileName = file.metadata.title;
+    const fileName = fileFileName(file);
     const fileType = file.metadata.fileType;
 
     switch (fileType) {
@@ -787,7 +790,7 @@ const publicAlbums_downloadThumbnail = async (
             const { accessToken, accessTokenJWT } = credentials;
             const params = new URLSearchParams({
                 accessToken,
-                ...(accessTokenJWT ? { accessTokenJWT } : {}),
+                ...(accessTokenJWT && { accessTokenJWT }),
             });
             return fetch(
                 `${customOrigin}/public-collection/files/preview/${file.id}?${params.toString()}`,
@@ -820,7 +823,7 @@ const publicAlbums_downloadFile = async (
             const { accessToken, accessTokenJWT } = credentials;
             const params = new URLSearchParams({
                 accessToken,
-                ...(accessTokenJWT ? { accessTokenJWT } : {}),
+                ...(accessTokenJWT && { accessTokenJWT }),
             });
             return fetch(
                 `${customOrigin}/public-collection/files/download/${file.id}?${params.toString()}`,
